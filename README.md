@@ -2,6 +2,10 @@
 
 Clickable index for project-task links and active research repositories.
 
+## Quick Link Board
+
+- [Soil moisture data paper (Google Doc)](https://docs.google.com/document/d/1ygVdDnUmLoWmH6pSKAmBi8YTPKRUy21hyVTMp_dTvGM/edit?tab=t.0)
+
 ## Project Task Links
 
 This section is generated from GitHub Project items so links are all in one place.
