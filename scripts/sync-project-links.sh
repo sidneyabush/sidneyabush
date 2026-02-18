@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OWNER="${1:-sidneyabush}"
+OWNER="${1:-sidney-workspace}"
 PROJECT_QUERY="${2:-sidneys-tasks}"
 LIMIT="${3:-500}"
 
@@ -33,34 +33,37 @@ fi
 PROJECTS_JSON="${TMP_DIR}/projects.json"
 gh project list --owner "${OWNER}" --limit 100 --format json > "${PROJECTS_JSON}"
 
+PROJECTS_ARRAY_JSON="${TMP_DIR}/projects_array.json"
+jq -c 'if type == "object" and has("projects") then .projects else . end' "${PROJECTS_JSON}" > "${PROJECTS_ARRAY_JSON}"
+
 PROJECT_NUMBER=""
 if [[ "${PROJECT_QUERY}" =~ ^[0-9]+$ ]]; then
   PROJECT_NUMBER="${PROJECT_QUERY}"
 else
   PROJECT_NUMBER="$(jq -r --arg q "${PROJECT_QUERY}" '
     map(select((.title // "") | ascii_downcase == ($q | ascii_downcase))) | .[0].number // empty
-  ' "${PROJECTS_JSON}")"
+  ' "${PROJECTS_ARRAY_JSON}")"
 
   if [[ -z "${PROJECT_NUMBER}" ]]; then
     PROJECT_NUMBER="$(jq -r --arg q "${PROJECT_QUERY}" '
       map(select((.title // "") | ascii_downcase | contains($q | ascii_downcase))) | .[0].number // empty
-    ' "${PROJECTS_JSON}")"
+    ' "${PROJECTS_ARRAY_JSON}")"
   fi
 fi
 
 if [[ -z "${PROJECT_NUMBER}" ]]; then
   echo "Project not found: ${PROJECT_QUERY}" >&2
   echo "Available projects:" >&2
-  jq -r '.[] | "- \(.title) (#\(.number))"' "${PROJECTS_JSON}" >&2
+  jq -r '.[] | "- \(.title) (#\(.number))"' "${PROJECTS_ARRAY_JSON}" >&2
   exit 1
 fi
 
 PROJECT_TITLE="$(jq -r --argjson n "${PROJECT_NUMBER}" '
   map(select(.number == $n)) | .[0].title // "Project \($n)"
-' "${PROJECTS_JSON}")"
+' "${PROJECTS_ARRAY_JSON}")"
 PROJECT_URL="$(jq -r --argjson n "${PROJECT_NUMBER}" '
   map(select(.number == $n)) | .[0].url // ""
-' "${PROJECTS_JSON}")"
+' "${PROJECTS_ARRAY_JSON}")"
 
 ITEMS_JSON="${TMP_DIR}/items.json"
 gh project item-list "${PROJECT_NUMBER}" --owner "${OWNER}" --limit "${LIMIT}" --format json > "${ITEMS_JSON}"
@@ -70,16 +73,19 @@ jq -r '
   def strip_punct:
     gsub("[,.;)]+$"; "");
 
-  def all_urls:
-    [.. | strings | select(test("https?://")) | strip_punct] | unique;
+  def item_stream:
+    if type == "object" and has("items") then .items else . end;
+
+  def all_urls($x):
+    [$x | .. | strings | scan("https?://[^[:space:]<>\"`)\\]]+") | strip_punct] | unique;
 
   def item_title:
-    (.content.title // .title // .content.url // ("Item " + (.id // "unknown")));
+    (.title // .content.title // .content.url // ("Item " + (.id // "unknown")));
 
   [
-    .[] | {
+    item_stream[] | {
       title: item_title,
-      urls: ((all_urls + [(.content.url // empty)]) | map(select(length > 0)) | unique)
+      urls: ((all_urls(.) + [(.content.url // empty)]) | map(select(length > 0)) | unique)
     } | select((.urls | length) > 0)
   ] as $items
   |
